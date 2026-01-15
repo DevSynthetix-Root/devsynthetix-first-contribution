@@ -19,33 +19,36 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             
-            // Generate a random ID to keep titles unique
+            // Random ID taaki Title duplicate na lage
             const slotId = Math.floor(Math.random() * 100000);
 
             await github.rest.issues.create({
               owner,
               repo,
-              title: `Contribution Slot: Add your name [ID: ${slotId}]`,
+              title: `Contribution Slot: Add your name to the list [ID: ${slotId}]`,
               body: `
               ### 👋 Welcome to DevSynthetix First Contribution!
               
-              This is an automatically generated issue for beginners.
+              This is an automatically generated issue for beginners to practice Open Source.
               
               **Your Task:**
               1. Fork this repository.
-              2. Edit \`contributors/README.md\`.
+              2. Edit the file: \`contributors/README.md\`.
               3. Add your GitHub Username to the list (in alphabetical order).
-              4. Create a Pull Request.
+              4. Create a Pull Request (PR).
               
               ---
-              ### ⚠️ IMPORTANT
-              When creating your PR, link this issue by typing:
+              ### ⚠️ VERY IMPORTANT INSTRUCTION
+              When creating your PR, you **MUST** write the following in the description to link this issue:
               
               > **Closes #<issue-number>** *(Look at the top of this page to find the issue number)*
               
               ---
-              **Want to start? Comment "Assign me" below!** 🚀
+              Once your PR is merged, this issue will close automatically, and a new one will open for the next person.
+              
+              **Ready? Comment "Assign me" below!** 🚀
               `,
-              labels: ['good first issue', 'beginner-friendly']
+              // 👇 Yahan tumhare labels set kar diye hain
+              labels: ['good first issue', 'help wanted', 'documentation', 'beginner-friendly']
             });
             
