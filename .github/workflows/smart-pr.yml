@@ -1,0 +1,121 @@
+name: Smart AI PR Handler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  smart-ai-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smart AI Review & Merge
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.issue.number;
+            const actor = context.actor;
+            const prBody = context.payload.pull_request.body || "";
+
+            // 1. Check for "Closes #" instruction (Friendly Reminder)
+            if (!prBody.toLowerCase().includes('closes #') && !prBody.toLowerCase().includes('fixes #')) {
+               await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `👋 @${actor}, **Quick Tip:**\n\nTo automatically close the issue when this PR is merged, please edit your PR description and add:\n\n> \`Closes #<issue_number>\`\n\n(Example: Closes #1).`
+              });
+            }
+
+            // 2. Security Check (Only specific files allowed)
+            const files = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: prNumber
+            });
+
+            const allowedFile = 'contributors/README.md';
+            let fileCheckPassed = true;
+            let invalidFiles = [];
+
+            for (const file of files.data) {
+              if (file.filename !== allowedFile) {
+                fileCheckPassed = false;
+                invalidFiles.push(file.filename);
+              }
+            }
+
+            // 3. Conflict Check
+            const prDetails = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+            const isMergeable = prDetails.data.mergeable;
+
+            // --- AI LOGIC ---
+
+            // SCENARIO: Unsafe Files Modified
+            if (!fileCheckPassed) {
+               await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `🤖 **AI Security Alert:**\n\n⚠️ You modified files outside the allowed list: \`${invalidFiles.join(', ')}\`.\n\n🛑 **Action:** Auto-merge is disabled. A human maintainer will review this manually.`
+              });
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: prNumber, labels: ['needs-manual-review']
+              });
+              return; // Stop here
+            }
+
+            // SCENARIO: Merge Conflicts
+            if (isMergeable === false) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `❌ **Merge Conflict Detected:**\n\nSomeone else merged their code before you. Please update your branch, fix the conflicts, and push again.`
+              });
+              return; // Stop here
+            }
+
+            // SCENARIO: All Good -> Auto Merge
+            if (fileCheckPassed && isMergeable !== false) {
+              
+              // Approve
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number: prNumber, event: 'APPROVE', body: "✅ AI Review: Safe to merge."
+              });
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `🤖 **AI Analysis:**\n\n✅ File Check Passed.\n✅ No Conflicts.\n🚀 Merging now...`
+              });
+
+              try {
+                await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  merge_method: 'squash'
+                });
+                
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: `🎉 **Congratulations @${actor}!**\n\nYour PR has been successfully merged! You are now a contributor. 🏆`
+                });
+              } catch (e) {
+                console.log(e);
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: prNumber, body: `⚠️ Merge failed unexpectedly. Maintainer notified.`
+                });
+              }
+            }
+            
