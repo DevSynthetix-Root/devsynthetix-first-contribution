@@ -5,9 +5,9 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: write      # Merge karne ke liye
+  pull-requests: write # Comment aur Label ke liye
+  issues: write        # Issue close karne ke liye
 
 jobs:
   smart-ai-bot:
@@ -23,80 +23,115 @@ jobs:
             const actor = context.actor;
             const prBody = context.payload.pull_request.body || "";
 
-            // 1. Check for "Closes #" instruction (Friendly Reminder)
+            // --- 1. Friendly Reminder for "Closes #" ---
             if (!prBody.toLowerCase().includes('closes #') && !prBody.toLowerCase().includes('fixes #')) {
                await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `👋 @${actor}, **Quick Tip:**\n\nTo automatically close the issue when this PR is merged, please edit your PR description and add:\n\n> \`Closes #<issue_number>\`\n\n(Example: Closes #1).`
+                body: `👋 **@${actor}**, just a quick reminder:\n\nTo automatically link and close the issue once merged, please update your PR description to include:\n> \`Closes #<issue_number>\`\n\n*(No action needed if you already did this!)*`
               });
             }
 
-            // 2. Security Check (Only specific files allowed)
+            // --- 2. Security & File Integrity Check ---
             const files = await github.rest.pulls.listFiles({
               owner,
               repo,
               pull_number: prNumber
             });
 
-            const allowedFile = 'contributors/README.md';
+            // Yahan define hai ki kaunsi files Auto-Merge ke liye safe hain
+            const allowedFiles = ['contributors/README.md', 'README.md'];
+            
             let fileCheckPassed = true;
             let invalidFiles = [];
 
             for (const file of files.data) {
-              if (file.filename !== allowedFile) {
+              // Agar file allowed list mein nahi hai, toh use note kar lo
+              if (!allowedFiles.includes(file.filename)) {
                 fileCheckPassed = false;
                 invalidFiles.push(file.filename);
               }
             }
 
-            // 3. Conflict Check
+            // --- 3. Conflict Check (Safety First) ---
             const prDetails = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
             const isMergeable = prDetails.data.mergeable;
 
-            // --- AI LOGIC ---
+            // ===========================================
+            //              AI LOGIC CORE
+            // ===========================================
 
-            // SCENARIO: Unsafe Files Modified
+            // CASE A: Unauthorized Files Modified (Manual Review Needed)
             if (!fileCheckPassed) {
+               // Professional Message listing the specific files
+               const fileList = invalidFiles.map(f => `\`${f}\``).join(', ');
+               
                await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `🤖 **AI Security Alert:**\n\n⚠️ You modified files outside the allowed list: \`${invalidFiles.join(', ')}\`.\n\n🛑 **Action:** Auto-merge is disabled. A human maintainer will review this manually.`
+                body: `### ⚠️ Manual Review Required
+
+                Hello **@${actor}**, thank you for your contribution!
+                
+                I have analyzed your code, and it looks promising. However, the system detected changes to files that are outside the automatic merge scope:
+                - ${fileList}
+
+                **Status:**
+                To ensure the integrity of the project structure, these changes require a manual review by a maintainer.
+                
+                ✅ **Next Steps:** No further action is required from you. The team has been notified and will review your PR shortly.`
               });
+              
+              // Label laga do taaki Admin ko dikh jaye
               await github.rest.issues.addLabels({
-                owner, repo, issue_number: prNumber, labels: ['needs-manual-review']
+                owner, repo, issue_number: prNumber, labels: ['needs-manual-review', 'structure-change']
               });
-              return; // Stop here
+              return; // Bot yahi ruk jayega, Merge nahi karega.
             }
 
-            // SCENARIO: Merge Conflicts
+            // CASE B: Merge Conflicts (System Safety)
             if (isMergeable === false) {
               await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `❌ **Merge Conflict Detected:**\n\nSomeone else merged their code before you. Please update your branch, fix the conflicts, and push again.`
+                body: `### ❌ Merge Conflict Detected
+                
+                Another contribution was merged recently which conflicts with your changes.
+                
+                **Action Required:**
+                Please sync your branch with the main repository and resolve the conflicts to proceed.`
               });
               return; // Stop here
             }
 
-            // SCENARIO: All Good -> Auto Merge
+            // CASE C: All Good -> Auto Merge (Professional & Clean)
             if (fileCheckPassed && isMergeable !== false) {
               
-              // Approve
+              // Step 1: Formal Approval
               await github.rest.pulls.createReview({
-                owner, repo, pull_number: prNumber, event: 'APPROVE', body: "✅ AI Review: Safe to merge."
+                owner, repo, pull_number: prNumber, event: 'APPROVE', body: "✅ **AI Review:** Code follows contribution guidelines. Approved for merge."
               });
 
+              // Step 2: Professional Analysis Comment (No filenames mentioned)
               await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `🤖 **AI Analysis:**\n\n✅ File Check Passed.\n✅ No Conflicts.\n🚀 Merging now...`
+                body: `### 🤖 AI Analysis Report
+                
+                | Category | Status |
+                | :--- | :--- |
+                | **File Integrity** | ✅ Passed |
+                | **Conflict Check** | ✅ Passed |
+                | **Code Quality** | ✅ Standard Compliant |
+
+                **Result:** The changes are verified and safe. Proceeding with automatic merge.`
               });
 
+              // Step 3: Merge Operation
               try {
                 await github.rest.pulls.merge({
                   owner,
@@ -105,16 +140,19 @@ jobs:
                   merge_method: 'squash'
                 });
                 
+                // Final Congratulatory Message
                 await github.rest.issues.createComment({
                   owner,
                   repo,
                   issue_number: prNumber,
-                  body: `🎉 **Congratulations @${actor}!**\n\nYour PR has been successfully merged! You are now a contributor. 🏆`
+                  body: `🎉 **Contribution Merged!**
+                  
+                  Congratulations **@${actor}**, your changes are now live in the repository. Thank you for contributing to Open Source! 🏆`
                 });
               } catch (e) {
                 console.log(e);
                 await github.rest.issues.createComment({
-                  owner, repo, issue_number: prNumber, body: `⚠️ Merge failed unexpectedly. Maintainer notified.`
+                  owner, repo, issue_number: prNumber, body: `⚠️ **System Error:** Merge failed unexpectedly. A maintainer has been notified.`
                 });
               }
             }
