@@ -3,13 +3,16 @@ name: Cycle Manager (Auto Issue Creator)
 on:
   pull_request:
     types: [closed]
+  workflow_dispatch:      # 👈 YEH LINE ADD KARNI HAI (Manual Button)
 
 permissions:
   issues: write
 
 jobs:
   create-next-issue:
-    if: github.event.pull_request.merged == true
+    # Neeche wali line hata do ya comment kar do taaki button hamesha chale
+    # if: github.event.pull_request.merged == true 
+    
     runs-on: ubuntu-latest
     steps:
       - name: Create New Contribution Issue
@@ -18,14 +21,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            
-            // Random ID taaki Title duplicate na lage
             const slotId = Math.floor(Math.random() * 100000);
 
             await github.rest.issues.create({
               owner,
               repo,
-              title: `Contribution Slot: Add your name to the list [ID: ${slotId}]`,
+              title: `Contribution Slot: Open for Contribution [ID: ${slotId}]`,
               body: `
               ### 👋 Welcome to DevSynthetix First Contribution!
               
@@ -48,7 +49,6 @@ jobs:
               
               **Ready? Comment "Assign me" below!** 🚀
               `,
-              // 👇 Yahan tumhare labels set kar diye hain
               labels: ['good first issue', 'help wanted', 'documentation', 'beginner-friendly']
             });
             
